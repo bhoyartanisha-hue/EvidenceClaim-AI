@@ -139,3 +139,11 @@ class Analysis(BaseModel):
     assessment: Optional[AssessmentResult] = None
     human_review: Optional[HumanReviewResult] = None
     evidence: List[Evidence] = []
+
+class StatsResponse(BaseModel):
+    total: int
+    needs_review: int
+    investigation_required: int
+    automated: int
+    analyzing: int
+    avg_complexity_score: Optional[float] = None

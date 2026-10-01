@@ -183,7 +183,9 @@ ClaimIQ is 100% deterministic and functional out of the box with zero external A
 | `POST` | `/api/claims/{id}/documents` | Upload multipart document for claim |
 | `POST` | `/api/claims/{id}/analyze` | Trigger asynchronous 7-agent pipeline |
 | `GET` | `/api/claims/{id}/analysis` | Poll live analysis status and agent outputs |
-| `GET` | `/api/claims/{id}/evidence` | List all indexed evidence items |
+| `GET` | `/api/stats` | Aggregate dashboard statistics (total, review queue counts, avg complexity score) |
+| `DELETE` | `/api/claims/{id}` | Delete a claim, attached documents, evidence, results, analysis, and files |
+| `DELETE` | `/api/claims` | Delete all claims (skipping any in active analysis) |
 | `POST` | `/api/demo/load` | Seed demo claim and attached test files |
 
 Interactive OpenAPI documentation is available at **http://localhost:8000/docs**.

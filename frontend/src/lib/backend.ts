@@ -1,4 +1,4 @@
-import type { AgentKey } from "@/lib/types";
+import type { AgentKey, BackendStats } from "@/lib/types";
 import type { Analysis, Evidence, RunStatus } from "@/types/analysis";
 
 export const API_BASE =
@@ -77,6 +77,9 @@ export const api = {
   analyze: (id: string) => request<unknown>(`/api/claims/${encodeURIComponent(id)}/analyze`, { method: "POST" }),
   getClaim: (id: string) => request<LiveClaim>(`/api/claims/${encodeURIComponent(id)}`),
   getAnalysis: (id: string) => request<LiveAnalysis>(`/api/claims/${encodeURIComponent(id)}/analysis`, {}, 5000),
+  getStats: () => request<BackendStats>("/api/stats"),
+  deleteClaim: (id: string) => request<void>(`/api/claims/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  deleteAllClaims: () => request<{ deleted: number }>("/api/claims", { method: "DELETE" }),
 };
 
 /** Guess a document_type from a filename. */

@@ -137,3 +137,63 @@ def test_upload_api_validation():
     )
     assert res_txt.status_code == 200
     assert res_txt.json()["filename"] == "report.txt"
+
+def test_stats_and_delete_endpoints():
+    # 1. Test GET /api/stats returns all keys
+    res_stats = client.get("/api/stats")
+    assert res_stats.status_code == 200
+    stats = res_stats.json()
+    assert "total" in stats
+    assert "needs_review" in stats
+    assert "investigation_required" in stats
+    assert "automated" in stats
+    assert "analyzing" in stats
+    assert "avg_complexity_score" in stats
+
+    # 2. Create a test claim
+    res_create = client.post("/api/claims", json={
+        "claim_type": "property_damage",
+        "description": "Roof leakage test",
+        "claim_amount": 25000,
+        "incident_date": "2026-09-10"
+    })
+    assert res_create.status_code == 201
+    claim_id = res_create.json()["id"]
+
+    # 3. Test DELETE /api/claims/{id} (204)
+    res_del = client.delete(f"/api/claims/{claim_id}")
+    assert res_del.status_code == 204
+
+    # 4. Confirm it is gone (404)
+    res_get = client.get(f"/api/claims/{claim_id}")
+    assert res_get.status_code == 404
+
+    # 5. Delete non-existent claim returns 404
+    res_del_unknown = client.delete(f"/api/claims/CLM-999999")
+    assert res_del_unknown.status_code == 404
+
+    # 6. Test 409 conflict when claim is analyzing
+    res_create2 = client.post("/api/claims", json={
+        "claim_type": "vehicle_accident",
+        "description": "Bumper damage test",
+        "claim_amount": 15000,
+        "incident_date": "2026-09-11"
+    })
+    assert res_create2.status_code == 201
+    cid2 = res_create2.json()["id"]
+    from backend.db import get_db
+    with get_db() as conn:
+        conn.execute("UPDATE claims SET status = 'analyzing' WHERE id = ?", (cid2,))
+
+    res_conflict = client.delete(f"/api/claims/{cid2}")
+    assert res_conflict.status_code == 409
+
+    # Clean up status
+    with get_db() as conn:
+        conn.execute("UPDATE claims SET status = 'draft' WHERE id = ?", (cid2,))
+
+    # 7. Test DELETE /api/claims (bulk delete)
+    res_del_all = client.delete("/api/claims")
+    assert res_del_all.status_code == 200
+    assert "deleted" in res_del_all.json()
+    assert res_del_all.json()["deleted"] >= 1

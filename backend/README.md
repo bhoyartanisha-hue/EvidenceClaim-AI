@@ -222,8 +222,10 @@ Base URL: `http://localhost:8000`
 | `GET` | `/api/claims/{id}` | Get claim details and attached documents |
 | `POST` | `/api/claims/{id}/documents` | Upload a document (`.pdf`, `.txt`, `.png`, `.jpg`, `.jpeg`, max 10MB) |
 | `POST` | `/api/claims/{id}/analyze` | Trigger asynchronous pipeline analysis (returns 202) |
-| `GET` | `/api/claims/{id}/analysis` | Get live/completed analysis with all 7 agent states |
-| `GET` | `/api/claims/{id}/evidence` | Get lookup table of resolved evidence items |
+| `GET` | `/api/evidence` | Get lookup table of resolved evidence items |
+| `GET` | `/api/stats` | Aggregate dashboard statistics (total, review queue counts, avg complexity score) |
+| `DELETE` | `/api/claims/{id}` | Delete a claim, attached documents, evidence, results, analysis, and files |
+| `DELETE` | `/api/claims` | Delete all claims (skipping any in active analysis) |
 | `POST` | `/api/demo/load` | Initialize demo claim with sample documents |
 
 ---

@@ -1,18 +1,19 @@
 import os
 import re
 import json
+import shutil
 import logging
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, status, Response
 from fastapi.responses import JSONResponse
 
 try:
     from ..config import UPLOADS_DIR, AI_PROVIDER, DEMO_DIR
     from ..schemas import (
-        Claim, ClaimCreate, ClaimDocument, Analysis, Evidence
+        Claim, ClaimCreate, ClaimDocument, Analysis, Evidence, StatsResponse
     )
     from ..db import get_db, get_next_claim_id, get_next_doc_id
     from ..services.files import sanitize_filename, validate_file_metadata, extract_text_from_file
@@ -22,7 +23,7 @@ try:
 except (ImportError, ValueError):
     from config import UPLOADS_DIR, AI_PROVIDER, DEMO_DIR
     from schemas import (
-        Claim, ClaimCreate, ClaimDocument, Analysis, Evidence
+        Claim, ClaimCreate, ClaimDocument, Analysis, Evidence, StatsResponse
     )
     from db import get_db, get_next_claim_id, get_next_doc_id
     from services.files import sanitize_filename, validate_file_metadata, extract_text_from_file
@@ -298,3 +299,89 @@ def get_evidence_endpoint(claim_id: str):
 def load_demo():
     claim = load_demo_claim()
     return {"claim": claim}
+
+@router.get("/stats", response_model=StatsResponse)
+def get_stats():
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) as count FROM claims")
+        total = cursor.fetchone()["count"]
+
+        cursor.execute("SELECT COUNT(*) as count FROM claims WHERE recommendation = 'human_review'")
+        needs_review = cursor.fetchone()["count"]
+
+        cursor.execute("SELECT COUNT(*) as count FROM claims WHERE recommendation = 'investigation_required'")
+        investigation_required = cursor.fetchone()["count"]
+
+        cursor.execute("SELECT COUNT(*) as count FROM claims WHERE recommendation = 'automated_processing'")
+        automated = cursor.fetchone()["count"]
+
+        cursor.execute("SELECT COUNT(*) as count FROM claims WHERE status = 'analyzing'")
+        analyzing = cursor.fetchone()["count"]
+
+        cursor.execute("SELECT AVG(complexity_score) as avg_score FROM claims WHERE complexity_score IS NOT NULL")
+        row = cursor.fetchone()
+        avg_score = None
+        if row and row["avg_score"] is not None:
+            avg_score = round(float(row["avg_score"]), 1)
+
+    return {
+        "total": total,
+        "needs_review": needs_review,
+        "investigation_required": investigation_required,
+        "automated": automated,
+        "analyzing": analyzing,
+        "avg_complexity_score": avg_score
+    }
+
+@router.delete("/claims/{claim_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_claim(claim_id: str):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, status FROM claims WHERE id = ?", (claim_id,))
+        crow = cursor.fetchone()
+        if not crow:
+            raise HTTPException(status_code=404, detail="Claim not found")
+
+        if crow["status"] == "analyzing" or claim_id in _ACTIVE_RUNS:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot delete a claim that is currently being analyzed"
+            )
+
+        cursor.execute("DELETE FROM documents WHERE claim_id = ?", (claim_id,))
+        cursor.execute("DELETE FROM agent_results WHERE claim_id = ?", (claim_id,))
+        cursor.execute("DELETE FROM evidence WHERE claim_id = ?", (claim_id,))
+        cursor.execute("DELETE FROM analyses WHERE claim_id = ?", (claim_id,))
+        cursor.execute("DELETE FROM claims WHERE id = ?", (claim_id,))
+
+    ANALYSIS_STATE.pop(claim_id, None)
+    claim_uploads = UPLOADS_DIR / claim_id
+    if claim_uploads.exists():
+        shutil.rmtree(claim_uploads, ignore_errors=True)
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+@router.delete("/claims")
+def delete_all_claims():
+    deleted_count = 0
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, status FROM claims")
+        rows = cursor.fetchall()
+        for row in rows:
+            cid = row["id"]
+            if row["status"] == "analyzing" or cid in _ACTIVE_RUNS:
+                continue
+            cursor.execute("DELETE FROM documents WHERE claim_id = ?", (cid,))
+            cursor.execute("DELETE FROM agent_results WHERE claim_id = ?", (cid,))
+            cursor.execute("DELETE FROM evidence WHERE claim_id = ?", (cid,))
+            cursor.execute("DELETE FROM analyses WHERE claim_id = ?", (cid,))
+            cursor.execute("DELETE FROM claims WHERE id = ?", (cid,))
+            ANALYSIS_STATE.pop(cid, None)
+            claim_uploads = UPLOADS_DIR / cid
+            if claim_uploads.exists():
+                shutil.rmtree(claim_uploads, ignore_errors=True)
+            deleted_count += 1
+
+    return {"deleted": deleted_count}
