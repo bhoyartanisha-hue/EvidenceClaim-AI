@@ -1,8 +1,22 @@
+import io
+import time
 import pytest
 from fastapi.testclient import TestClient
 from backend.main import app
+from backend.db import init_db
 
 client = TestClient(app)
+
+@pytest.fixture(autouse=True)
+def setup_db():
+    init_db()
+
+def test_root_endpoint():
+    res = client.get("/")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["name"] == "ClaimIQ API"
+    assert data["docs"] == "/docs"
 
 def test_api_health():
     res = client.get("/api/health")
@@ -12,34 +26,114 @@ def test_api_health():
     assert "ai_provider" in data
     assert "ai_available" in data
 
-def test_api_demo_flow():
+def test_demo_load_and_contract_polling():
     # 1. Load demo
     res_load = client.post("/api/demo/load")
     assert res_load.status_code == 200
     claim = res_load.json()["claim"]
-    assert claim["id"] == "CLM-1001"
+    claim_id = claim["id"]
+    assert claim_id == "CLM-1001"
     assert len(claim["documents"]) == 3
 
-    # 2. Get claim
-    res_get = client.get("/api/claims/CLM-1001")
-    assert res_get.status_code == 200
-
-    # 3. Analyze claim (synchronous execution for test)
-    res_analyze = client.post("/api/claims/CLM-1001/analyze")
+    # 2. Trigger analyze
+    res_analyze = client.post(f"/api/claims/{claim_id}/analyze")
     assert res_analyze.status_code == 202
 
-    # 4. Check analysis
-    res_analysis = client.get("/api/claims/CLM-1001/analysis")
-    assert res_analysis.status_code == 200
-    data = res_analysis.json()
-    assert data["claim_id"] == "CLM-1001"
-    assert "agents" in data
+    # 3. Poll analysis
+    final_analysis = None
+    for _ in range(25):
+        time.sleep(0.3)
+        res_poll = client.get(f"/api/claims/{claim_id}/analysis")
+        assert res_poll.status_code == 200
+        data = res_poll.json()
+        if data.get("status") in ["completed", "error"]:
+            final_analysis = data
+            break
 
-def test_cors_headers():
-    headers = {
+    assert final_analysis is not None
+    assert final_analysis["status"] == "completed"
+
+    # Contract Assertions
+    cov = final_analysis["coverage"]
+    assert cov["coverage_status"] == "applicable"
+
+    missing = final_analysis["missing_information"]
+    assert missing["completeness"] == 75
+
+    anomalies = final_analysis["anomalies"]
+    assert len(anomalies) == 2
+    anom_types = {a["type"] for a in anomalies}
+    assert anom_types == {"date_mismatch", "amount_mismatch"}
+
+    assessment = final_analysis["assessment"]
+    assert assessment["complexity_score"] == 62
+    assert assessment["recommended_route"] == "human_review"
+
+    # Every evidence_id in findings must exist in top-level evidence list
+    all_evidence = final_analysis["evidence"]
+    assert len(all_evidence) >= 7
+    evidence_id_set = {e["id"] for e in all_evidence}
+
+    for eid in cov.get("evidence_ids", []):
+        assert eid in evidence_id_set, f"Coverage evidence ID '{eid}' missing from evidence table"
+
+    for item in missing.get("items", []):
+        for eid in item.get("evidence_ids", []):
+            assert eid in evidence_id_set, f"Missing item evidence ID '{eid}' missing from evidence table"
+
+    for a in anomalies:
+        for eid in a.get("evidence_ids", []):
+            assert eid in evidence_id_set, f"Anomaly evidence ID '{eid}' missing from evidence table"
+
+    # Wording check
+    json_text = res_poll.text.lower()
+    for banned in ["fraud confirmed", "fraudulent", "approved", "rejected"]:
+        assert banned not in json_text
+
+def test_cors_headers_localhost_and_lovable():
+    # Localhost
+    headers_local = {
         "Origin": "http://localhost:5173",
         "Access-Control-Request-Method": "GET"
     }
-    res = client.options("/api/health", headers=headers)
-    assert res.status_code == 200
-    assert res.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    res_local = client.options("/api/health", headers=headers_local)
+    assert res_local.status_code == 200
+    assert res_local.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
+    # Lovable.app origin regex
+    headers_lovable = {
+        "Origin": "https://test-preview-123.lovable.app",
+        "Access-Control-Request-Method": "POST"
+    }
+    res_lovable = client.options("/api/claims", headers=headers_lovable)
+    assert res_lovable.status_code == 200
+    assert res_lovable.headers.get("access-control-allow-origin") == "https://test-preview-123.lovable.app"
+
+def test_upload_api_validation():
+    # Setup test claim
+    res_claim = client.post("/api/claims", json={
+        "claim_type": "vehicle_accident",
+        "description": "Minor dent",
+        "claim_amount": 10000,
+        "incident_date": "2026-09-15"
+    })
+    assert res_claim.status_code == 201
+    claim_id = res_claim.json()["id"]
+
+    # Reject .exe
+    exe_file = io.BytesIO(b"MZ\x90\x00")
+    res_exe = client.post(
+        f"/api/claims/{claim_id}/documents",
+        files={"file": ("virus.exe", exe_file, "application/octet-stream")}
+    )
+    assert res_exe.status_code == 400
+    assert "Unsupported file extension" in res_exe.json()["detail"]
+
+    # Accept valid .txt
+    txt_file = io.BytesIO(b"Incident report details")
+    res_txt = client.post(
+        f"/api/claims/{claim_id}/documents",
+        files={"file": ("report.txt", txt_file, "text/plain")}
+    )
+    assert res_txt.status_code == 200
+    assert res_txt.json()["filename"] == "report.txt"

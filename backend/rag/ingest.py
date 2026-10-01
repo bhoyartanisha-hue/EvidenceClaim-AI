@@ -19,10 +19,12 @@ def ingest_policy(
         "page": page_number or None
     }
     """
-    if filename in _INDEX_CACHE and _INDEX_CACHE[filename]:
-        return _INDEX_CACHE[filename]
+    cache_key = f"{filename}_{hash(text)}"
+    if cache_key in _INDEX_CACHE and _INDEX_CACHE[cache_key]:
+        return _INDEX_CACHE[cache_key]
 
     if not text:
+
         return []
 
     # Regex to match numbered sections like '1. Definitions' or '3.1 Accidental Damage'
@@ -74,8 +76,9 @@ def ingest_policy(
                 "page": None
             })
 
-    _INDEX_CACHE[filename] = chunks
+    _INDEX_CACHE[cache_key] = chunks
     return chunks
+
 
 def clear_cache():
     _INDEX_CACHE.clear()
