@@ -5,19 +5,20 @@ import { ArrowLeft, ArrowRight, Check, FileText, Loader2, Upload, X } from "luci
 
 import { PIPELINE_AGENTS } from "@/lib/demo-data";
 import { addSessionClaim, nextClaimId } from "@/lib/session-claims";
+import { api, guessDocType } from "@/lib/backend";
 import type { AgentResult, Claim, ClaimType } from "@/lib/types";
 
 const TYPES: ClaimType[] = ["Auto", "Home", "Health", "Life"];
 
 const DEMO_PRESET = {
-  claimant: "Rohan Mehta",
-  policyNumber: "POL-AU-77123",
+  claimant: "Rahul Verma",
+  policyNumber: "POL-1024",
   type: "Auto" as ClaimType,
-  dateFiled: new Date().toISOString().slice(0, 10),
-  amountClaimed: "5600",
+  dateFiled: "2026-09-12",
+  amountClaimed: "85000",
   summary:
-    "Front bumper and headlight damage from a parking-lot collision; repair estimate attached.",
-  docs: ["claim_form.pdf", "repair_estimate.pdf", "incident_photo_1.jpg"],
+    "Rear-ended at a traffic signal; rear bumper and boot damaged.",
+  docs: ["claim_form.txt", "repair_invoice.txt", "insurance_policy.txt"],
 };
 
 export const Route = createFileRoute("/new-claim")({
@@ -54,7 +55,7 @@ function NewClaimPage() {
   const [dateFiled, setDateFiled] = useState(new Date().toISOString().slice(0, 10));
   const [amount, setAmount] = useState("");
   const [summary, setSummary] = useState("");
-  const [docs, setDocs] = useState<string[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,19 +72,55 @@ function NewClaimPage() {
     setDateFiled(DEMO_PRESET.dateFiled);
     setAmount(DEMO_PRESET.amountClaimed);
     setSummary(DEMO_PRESET.summary);
-    setDocs([...DEMO_PRESET.docs]);
+
+    const f1 = new File([`CLAIM FORM\nClaim Number: CLM-1001\nPolicy Number: POL-1024\nClaimant Name: Rahul Verma\nClaim Type: Vehicle Accident\nDate of Accident: 12/09/2026\nLocation of Accident: Nagpur, Maharashtra\nVehicle: Maruti Swift (MH31AB1234)\nClaimed Amount: INR 85,000\nDescription: Rear-ended at a traffic signal; rear bumper and boot damaged.\n`], "claim_form.txt", { type: "text/plain" });
+    const f2 = new File([`REPAIR INVOICE\nInvoice No: INV-5521\nWorkshop: Sai Auto Works, Nagpur\nCustomer: Rahul Verma\nPolicy Number: POL-1024\nVehicle: Maruti Swift (MH31AB1234)\nInvoice Date: 08/09/2026\nRepair Date: 08/09/2026\nItems: Rear bumper replacement, boot panel repair, paint\nTotal Repair Amount: INR 92,000\n`], "repair_invoice.txt", { type: "text/plain" });
+    const f3 = new File([`MOTOR INSURANCE POLICY\nPolicy Number: POL-1024\nPolicyholder: Rahul Verma\n\n1. Definitions\n"Insured vehicle" means the vehicle described in the policy schedule.\n\n2. Eligibility\nThis policy is issued to private vehicle owners residing in India.\n\n3.1 Accidental Damage\nAccidental vehicle damage is covered, including collision with another vehicle, subject to the exclusions in Section 3.2.\n\n3.2 Exclusions\nThe policy does not cover normal wear and tear, intentional damage, damage while driving under the influence, or use of the vehicle in racing.\n\n4.1 Claim Procedure\nClaims must be reported within 7 days of the incident.\n\n4.2 Required Documents\nFor vehicle accident claims, an accident report (police FIR or equivalent) must accompany the claim form and repair invoice.\n\n5. Cancellation\nThe policy may be cancelled by either party with 15 days written notice.\n`], "insurance_policy.txt", { type: "text/plain" });
+
+    setFiles([f1, f2, f3]);
     setStep(2);
   }
 
-  function onFiles(files: FileList | null) {
-    if (!files) return;
-    setDocs((prev) => [...prev, ...Array.from(files).map((f) => f.name)]);
+  function onFiles(fileList: FileList | null) {
+    if (!fileList) return;
+    const newFiles = Array.from(fileList);
+    setFiles((prev) => [...prev, ...newFiles]);
     if (fileInput.current) fileInput.current.value = "";
   }
 
   async function submit() {
     setSubmitting(true);
     setError(null);
+
+    const typeMap: Record<ClaimType, string> = {
+      Auto: "vehicle_accident",
+      Home: "property_damage",
+      Health: "other",
+      Life: "other",
+    };
+
+    try {
+      const created = await api.createClaim({
+        claim_type: typeMap[type] || "vehicle_accident",
+        description: summary.trim(),
+        claim_amount: Math.round(Number(amount)),
+        incident_date: dateFiled,
+      });
+
+      if (created?.id) {
+        for (const f of files) {
+          const docType = guessDocType(f.name);
+          await api.uploadDocument(created.id, f, docType);
+        }
+        await api.analyze(created.id);
+        await queryClient.invalidateQueries({ queryKey: ["claims"] });
+        await navigate({ to: "/claim/$id", params: { id: created.id }, search: { live: 1 } });
+        return;
+      }
+    } catch (err) {
+      console.warn("Live API creation failed, falling back to mock session claim:", err);
+    }
+
     const claim: Claim = {
       id: nextClaimId(),
       claimant: claimant.trim(),
@@ -256,24 +293,24 @@ function NewClaimPage() {
                 onChange={(e) => onFiles(e.target.files)}
               />
               <p className="mt-3 text-xs text-muted-foreground">
-                Claim forms, invoices, reports and photos (demo only — files are not uploaded).
+                Claim forms, invoices, reports and photos.
               </p>
             </div>
 
-            {docs.length > 0 && (
+            {files.length > 0 && (
               <ul className="mt-4 space-y-2">
-                {docs.map((name) => (
+                {files.map((file, idx) => (
                   <li
-                    key={name}
+                    key={`${file.name}-${idx}`}
                     className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2"
                   >
                     <span className="flex items-center gap-2 text-sm text-navy">
                       <FileText className="h-4 w-4 text-brand" />
-                      {name}
+                      {file.name}
                     </span>
                     <button
-                      onClick={() => setDocs((prev) => prev.filter((d) => d !== name))}
-                      aria-label={`Remove ${name}`}
+                      onClick={() => setFiles((prev) => prev.filter((_, i) => i !== idx))}
+                      aria-label={`Remove ${file.name}`}
                       className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                     >
                       <X className="h-4 w-4" />
@@ -311,7 +348,7 @@ function NewClaimPage() {
                 Back
               </button>
               <p className="text-xs text-muted-foreground">
-                {docs.length} document{docs.length === 1 ? "" : "s"} attached
+                {files.length} document{files.length === 1 ? "" : "s"} attached
               </p>
             </div>
           </div>

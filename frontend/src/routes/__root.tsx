@@ -8,15 +8,14 @@ import {
   Scripts,
   type ErrorComponentProps,
 } from "@tanstack/react-router";
-import { ShieldCheck } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { ShieldCheck, Loader2 } from "lucide-react";
+import { type ReactNode } from "react";
 
 import { EvidenceDrawerProvider } from "@/components/EvidenceDrawer";
 import { DataSourcePill } from "@/components/DataSourcePill";
 import { Toaster } from "@/components/ui/sonner";
-import { DataSourceProvider } from "@/services/dataSource";
+import { DataSourceProvider, useRunDemoClaim } from "@/services/dataSource";
 import appCss from "../styles.css?url";
-import { reportLovableError } from "../lib/lovable-error-reporting";
 
 function NotFoundComponent() {
   return (
@@ -43,9 +42,6 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: ErrorComponentProps) {
   console.error(error);
   const router = useRouter();
-  useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
-  }, [error]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -83,25 +79,25 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "ClaimIQ — AI Claims Intelligence" },
+      { title: "ClaimIQ — AI Insurance Claims Intelligence" },
       {
         name: "description",
         content:
-          "ClaimIQ is an AI decision-support prototype for insurance claims: a 7-agent pipeline that turns claim documents into evidence-backed recommendations for human adjusters.",
+          "ClaimIQ: an evidence-first multi-agent AI decision-support prototype for insurance claims.",
       },
       { name: "author", content: "ClaimIQ" },
-      { property: "og:title", content: "ClaimIQ — AI Claims Intelligence" },
+      { property: "og:title", content: "ClaimIQ — AI Insurance Claims Intelligence" },
       {
         property: "og:description",
         content:
-          "A 7-agent AI pipeline that turns claim documents into evidence-backed recommendations for human adjusters.",
+          "ClaimIQ: an evidence-first multi-agent AI decision-support prototype for insurance claims.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "icon", href: "data:," },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
@@ -134,6 +130,8 @@ const navLinkClass =
   "rounded-md px-3 py-1.5 text-sm font-medium transition-colors";
 
 function AppNav() {
+  const { run: runDemo, busy } = useRunDemoClaim();
+
   return (
     <header className="sticky top-0 z-40 border-b border-navy-light bg-navy">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
@@ -170,14 +168,14 @@ function AppNav() {
             Review Queue
           </Link>
           <span className="ml-2"><DataSourcePill /></span>
-          <Link
-            to="/claim/$id"
-            params={{ id: "CLM-1001" }}
-            search={{ run: 1 }}
-            className="ml-2 rounded-md border border-white/15 bg-navy-deep px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-navy-light"
+          <button
+            onClick={() => runDemo()}
+            disabled={busy}
+            className="ml-2 inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-navy-deep px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-navy-light disabled:opacity-50"
           >
+            {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             Load Demo Claim
-          </Link>
+          </button>
         </nav>
       </div>
     </header>

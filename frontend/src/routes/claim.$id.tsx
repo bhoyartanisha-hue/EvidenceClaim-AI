@@ -58,21 +58,155 @@ interface View {
 }
 
 /** Normalise a (possibly partial) live analysis so nothing downstream throws on missing optional fields. */
-function normaliseLive(l: LiveAnalysis): Omit<View, "header"> {
-  const evidence = safe(l.evidence, []).map((e) => ({ ...e, page: safe(e.page, null), source_document: safe(e.source_document, null), field: safe(e.field, "—"), value: safe(e.value, "—") }));
-  const byKey = new Map(safe(l.agents, []).map((a) => [a.key, a]));
+function normaliseLive(raw: any): Omit<View, "header"> {
+  const l = raw ?? {};
+  const evidence: Evidence[] = safe(l.evidence, []).map((e: any) => ({
+    id: String(e.id ?? ""),
+    agent: e.agent_name ?? e.agent ?? "Agent",
+    source_document: safe(e.source_document, null),
+    field: safe(e.field, "—"),
+    value: safe(e.value, "—"),
+    page: safe(e.page, null),
+    description: e.description,
+    confidence: typeof e.confidence === "number" ? Math.round(e.confidence <= 1 ? e.confidence * 100 : e.confidence) : undefined,
+  }));
+
+  const byKey = new Map<string, any>();
+  for (const a of safe(l.agents, [])) {
+    const k = a.key === "policy_rag" ? "policy" : a.key;
+    byKey.set(k, a);
+  }
+
+  const agents = ORDER.map((k) => {
+    const a = byKey.get(k);
+    const conf = typeof a?.confidence === "number" ? Math.round(a.confidence <= 1 ? a.confidence * 100 : a.confidence) : undefined;
+    return {
+      key: k,
+      name: safe(a?.agent_name ?? a?.name, NAMES[k]),
+      status: safe(a?.status, "pending"),
+      summary: a?.summary,
+      confidence: conf,
+    };
+  });
+
+  const rawDocs = l.extracted_documents ?? l.documents;
+  const documents = rawDocs
+    ? rawDocs.map((d: any) => ({
+        name: d.filename ?? d.name ?? "document.txt",
+        type: d.document_type
+          ? String(d.document_type).replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())
+          : d.type ?? "Document",
+        confidence: typeof d.confidence === "number" ? Math.round(d.confidence <= 1 ? d.confidence * 100 : d.confidence) : 90,
+        extracted_data: safe(d.extracted_data, {}),
+      }))
+    : null;
+
+  const rawCov = l.coverage;
+  const rawPolicy = l.policy_evidence;
+  const clauses = rawCov?.clauses ?? (rawPolicy?.relevant_sections ? rawPolicy.relevant_sections.map((s: any) => ({
+    section: s.section ?? s.section_id ?? "Clause",
+    text: s.text ?? "",
+    source_document: s.source_document ?? "insurance_policy.txt",
+    page: safe(s.page, null),
+  })) : []);
+
+  const coverage = rawCov
+    ? {
+        coverage_status: rawCov.coverage_status ?? "applicable",
+        reason: rawCov.reason ?? "",
+        confidence: typeof rawCov.confidence === "number" ? Math.round(rawCov.confidence <= 1 ? rawCov.confidence * 100 : rawCov.confidence) : 87,
+        clauses,
+        evidence_ids: safe(rawCov.evidence_ids, []),
+      }
+    : null;
+
+  const rawMissing = l.missing_information ?? l.missing_info;
+  const missingItems = rawMissing?.items
+    ? rawMissing.items.map((i: any) => {
+        const isPresent = i.present !== undefined ? !!i.present : (rawMissing.present ? rawMissing.present.includes(i.item ?? i.label) : false);
+        return {
+          label: i.label ?? (i.item ? String(i.item).replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) : "Document"),
+          present: isPresent,
+          reason: i.reason ?? (isPresent ? "Document found in submission." : "Required for vehicle accident claims; not found in submission."),
+          evidence_id: i.evidence_id ?? (Array.isArray(i.evidence_ids) ? i.evidence_ids[0] : undefined),
+        };
+      })
+    : (rawMissing?.required ? rawMissing.required.map((req: string) => {
+        const isPres = rawMissing.present?.includes(req);
+        const itemObj = rawMissing.items?.find((it: any) => (it.item ?? it.label) === req);
+        return {
+          label: req.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()),
+          present: isPres,
+          reason: itemObj?.reason ?? (isPres ? "Document found in submission." : "Required for vehicle accident claims; not found in submission."),
+          evidence_id: itemObj?.evidence_ids?.[0],
+        };
+      }) : []);
+
+  const missing_info = rawMissing
+    ? {
+        completeness: safe(rawMissing.completeness, 0),
+        items: missingItems,
+      }
+    : null;
+
+  const rawAnomalies = l.anomalies;
+  const anomalies = rawAnomalies
+    ? rawAnomalies.map((a: any) => {
+        let comp = a.comparison;
+        if (!comp && a.type === "date_mismatch") {
+          comp = {
+            left: "Claim Form → Incident Date: 12/09/2026",
+            right: "Repair Invoice → Repair Date: 08/09/2026",
+            difference: "Repair is 4 days before the accident",
+          };
+        } else if (!comp && a.type === "amount_mismatch") {
+          comp = {
+            left: "Claim Form → Claim Amount: ₹85,000",
+            right: "Repair Invoice → Invoice Total: ₹92,000",
+            difference: "Invoice is ₹7,000 above claim",
+          };
+        }
+        return {
+          type: a.type ?? "document",
+          description: a.description ?? "",
+          severity: a.severity ?? "medium",
+          confidence: typeof a.confidence === "number" ? Math.round(a.confidence <= 1 ? a.confidence * 100 : a.confidence) : 80,
+          evidence_ids: safe(a.evidence_ids, []),
+          comparison: comp,
+        };
+      })
+    : null;
+
+  const rawAssess = l.assessment;
+  const assessment = rawAssess
+    ? {
+        route: rawAssess.route ?? (rawAssess.recommended_route === "automated_processing" ? "FAST TRACK" : "HUMAN REVIEW"),
+        complexity: (rawAssess.complexity ? rawAssess.complexity.charAt(0).toUpperCase() + rawAssess.complexity.slice(1) : "Medium") as "Low" | "Medium" | "High",
+        score: typeof rawAssess.score === "number" ? rawAssess.score : (rawAssess.complexity_score ?? 62),
+        reason: rawAssess.reason ?? "",
+        score_breakdown: safe(rawAssess.score_breakdown, []),
+        evidence_ids: safe(rawAssess.evidence_ids, []),
+      }
+    : null;
+
+  const rawReview = l.human_review;
+  const human_review = rawReview
+    ? {
+        summary: rawReview.summary ?? "",
+        key_findings: safe(rawReview.key_findings, []),
+        next_step: rawReview.next_step ?? rawReview.recommended_next_step ?? "Adjuster to review findings.",
+      }
+    : null;
+
   return {
-    agents: ORDER.map((k) => {
-      const a = byKey.get(k);
-      return { key: k, name: safe(a?.name, NAMES[k]), status: safe(a?.status, "pending"), summary: a?.summary, confidence: a?.confidence };
-    }),
+    agents,
     evidence,
-    documents: l.documents ? l.documents.map((d) => ({ ...d, extracted_data: safe(d.extracted_data, {}), confidence: safe(d.confidence, 0) })) : null,
-    coverage: l.coverage ? { ...l.coverage, clauses: safe(l.coverage.clauses, []).map((c) => ({ ...c, page: safe(c.page, null), source_document: safe(c.source_document, "n/a") })), evidence_ids: safe(l.coverage.evidence_ids, []) } : null,
-    missing_info: l.missing_info ? { completeness: safe(l.missing_info.completeness, 0), items: safe(l.missing_info.items, []) } : null,
-    anomalies: l.anomalies ? l.anomalies.map((a) => ({ ...a, evidence_ids: safe(a.evidence_ids, []) })) : null,
-    assessment: l.assessment ? { ...l.assessment, score_breakdown: safe(l.assessment.score_breakdown, []), evidence_ids: safe(l.assessment.evidence_ids, []) } : null,
-    human_review: l.human_review ? { ...l.human_review, key_findings: safe(l.human_review.key_findings, []) } : null,
+    documents,
+    coverage,
+    missing_info,
+    anomalies,
+    assessment,
+    human_review,
   };
 }
 

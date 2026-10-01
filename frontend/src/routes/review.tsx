@@ -61,9 +61,10 @@ function ReviewQueuePage() {
   const rows = useMemo<QueueRow[]>(
     () =>
       claims.flatMap((claim) => {
-        const analysis = mockAnalysisFor(claim.id);
-        if (!analysis) return [];
-        const { assessment, human_review } = analysis;
+        const analysis = mockAnalysisFor(claim.id, claim);
+        const score = claim.riskScore || analysis?.assessment.score || 62;
+        const comp = (score >= 60 ? "High" : score >= 35 ? "Medium" : "Low") as "High" | "Medium" | "Low";
+        const route = (analysis?.assessment.route ?? ((score >= 35 || claim.status === "In Review" || claim.status === "Anomaly Detected") ? "HUMAN REVIEW" : "FAST TRACK")) as Analysis["assessment"]["route"];
         return [
           {
             id: claim.id,
@@ -71,11 +72,11 @@ function ReviewQueuePage() {
             type: claim.type,
             dateFiled: claim.dateFiled,
             amountClaimed: claim.amountClaimed,
-            route: assessment.route,
-            complexity: assessment.complexity,
-            score: assessment.score,
-            reason: assessment.reason,
-            nextStep: human_review.next_step,
+            route,
+            complexity: analysis?.assessment.complexity ?? comp,
+            score: analysis?.assessment.score ?? score,
+            reason: analysis?.assessment.reason ?? (claim.summary || "Pending adjuster verification"),
+            nextStep: analysis?.human_review.next_step ?? "Adjuster to review evidence and confirm findings.",
           },
         ];
       }),

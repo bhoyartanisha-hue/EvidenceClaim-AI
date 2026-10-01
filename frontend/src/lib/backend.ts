@@ -2,14 +2,14 @@ import type { AgentKey } from "@/lib/types";
 import type { Analysis, Evidence, RunStatus } from "@/types/analysis";
 
 export const API_BASE =
-  ((import.meta.env["VITE_API_BASE_URL"] as string | undefined) || "http://localhost:8000").replace(/\/$/, "");
+  ((import.meta.env["VITE_API_BASE_URL"] as string | undefined) ?? "").replace(/\/$/, "");
 
 /** Defensive accessor: returns fallback when value is null/undefined. */
 export function safe<T>(value: T | null | undefined, fallback: T): T {
   return value === null || value === undefined ? fallback : value;
 }
 
-async function request<T>(path: string, init: RequestInit = {}, timeoutMs = 8000): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, timeoutMs = 4000): Promise<T> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {

@@ -90,7 +90,7 @@ def test_demo_load_and_contract_polling():
     for banned in ["fraud confirmed", "fraudulent", "approved", "rejected"]:
         assert banned not in json_text
 
-def test_cors_headers_localhost_and_lovable():
+def test_cors_headers_localhost():
     # Localhost
     headers_local = {
         "Origin": "http://localhost:5173",
@@ -100,14 +100,14 @@ def test_cors_headers_localhost_and_lovable():
     assert res_local.status_code == 200
     assert res_local.headers.get("access-control-allow-origin") == "http://localhost:5173"
 
-    # Lovable.app origin regex
-    headers_lovable = {
-        "Origin": "https://test-preview-123.lovable.app",
-        "Access-Control-Request-Method": "POST"
+    # 127.0.0.1
+    headers_127 = {
+        "Origin": "http://127.0.0.1:5173",
+        "Access-Control-Request-Method": "GET"
     }
-    res_lovable = client.options("/api/claims", headers=headers_lovable)
-    assert res_lovable.status_code == 200
-    assert res_lovable.headers.get("access-control-allow-origin") == "https://test-preview-123.lovable.app"
+    res_127 = client.options("/api/health", headers=headers_127)
+    assert res_127.status_code == 200
+    assert res_127.headers.get("access-control-allow-origin") == "http://127.0.0.1:5173"
 
 def test_upload_api_validation():
     # Setup test claim
