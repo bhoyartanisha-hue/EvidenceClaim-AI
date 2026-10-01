@@ -46,15 +46,17 @@ def init_db():
         """)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS documents (
-                id TEXT PRIMARY KEY,
+                id TEXT NOT NULL,
                 claim_id TEXT NOT NULL,
                 filename TEXT NOT NULL,
                 document_type TEXT,
                 extracted_text TEXT,
                 created_at TEXT NOT NULL,
+                PRIMARY KEY (claim_id, id),
                 FOREIGN KEY (claim_id) REFERENCES claims (id)
             )
         """)
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS agent_results (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

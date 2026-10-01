@@ -25,12 +25,13 @@ def test_full_demo_pipeline():
         })
 
     claim_data = {
-        "id": "CLM-1001",
+        "id": "CLM-9999",
         "claim_type": "vehicle_accident",
         "description": "Rear-ended at a traffic signal; rear bumper and boot damaged.",
         "claim_amount": 85000,
         "incident_date": "2026-09-12"
     }
+
 
     orchestrator = PipelineOrchestrator(step_delay_ms=0)
     analysis = orchestrator.run_pipeline(claim_data, documents, async_poll=False)

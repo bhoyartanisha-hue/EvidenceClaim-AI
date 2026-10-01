@@ -15,12 +15,16 @@ except (ImportError, ValueError):
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("claimiq")
 
+# Ensure database is initialized on import
+init_db()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize DB on startup
     init_db()
     logger.info("ClaimIQ backend database initialized.")
     yield
+
 
 app = FastAPI(
     title="ClaimIQ API",

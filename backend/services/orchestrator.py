@@ -7,7 +7,7 @@ from typing import Dict, Any, List, Optional
 
 try:
     from ..config import DEMO_STEP_DELAY_MS, AI_PROVIDER
-    from ..schemas import Analysis, AgentResult, ClaimDocument
+    from ..schemas import Analysis, AgentResult, ClaimDocument, Evidence
     from ..ai.provider import get_provider
     from ..services.evidence import EvidenceStore
     from ..agents.document_agent import DocumentAgent
@@ -20,9 +20,10 @@ try:
     from ..db import get_db
 except (ImportError, ValueError):
     from config import DEMO_STEP_DELAY_MS, AI_PROVIDER
-    from schemas import Analysis, AgentResult, ClaimDocument
+    from schemas import Analysis, AgentResult, ClaimDocument, Evidence
     from ai.provider import get_provider
     from services.evidence import EvidenceStore
+
     from agents.document_agent import DocumentAgent
     from agents.policy_agent import PolicyRAGAgent
     from agents.coverage_agent import CoverageAgent
@@ -113,12 +114,14 @@ def run_analysis(claim_id: str, step_delay_ms: Optional[int] = None) -> Analysis
             doc_rows = cursor.fetchall()
             documents = []
             for d in doc_rows:
+                d_dict = dict(d)
                 documents.append({
-                    "id": d["id"],
-                    "filename": d["filename"],
-                    "document_type": d["document_type"],
-                    "text": d.get("extracted_text", "")
+                    "id": d_dict["id"],
+                    "filename": d_dict["filename"],
+                    "document_type": d_dict.get("document_type"),
+                    "text": d_dict.get("extracted_text", "")
                 })
+
 
         # -------------------------------------------------------------
         # Stage 1: Document Agent
@@ -363,8 +366,9 @@ def run_analysis(claim_id: str, step_delay_ms: Optional[int] = None) -> Analysis
         evidence_store.validate(findings_to_validate)
 
         # Set final evidence list and status
-        analysis.evidence = evidence_store.all_items() # type: ignore
+        analysis.evidence = [Evidence(**e) for e in evidence_store.all_items()]
         analysis.status = "completed"
+
         analysis.mode = "ai" if (ai_provider.available() and ai_call_succeeded) else "demo_fallback"
 
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -412,3 +416,49 @@ def start_analysis_background(claim_id: str, step_delay_ms: Optional[int] = None
     t = threading.Thread(target=run_analysis, args=(claim_id, step_delay_ms), daemon=True)
     t.start()
     return t
+
+class PipelineOrchestrator:
+    def __init__(self, step_delay_ms: Optional[int] = None):
+        self.step_delay_ms = step_delay_ms
+
+    def run_pipeline(
+        self,
+        claim: Dict[str, Any],
+        documents: List[Dict[str, Any]],
+        async_poll: bool = False
+    ) -> Analysis:
+        cid = claim.get("id", "CLM-1001")
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM claims WHERE id = ?", (cid,))
+            if not cursor.fetchone():
+                conn.execute("""
+                    INSERT INTO claims (id, claim_type, description, claim_amount, incident_date, status, created_at)
+                    VALUES (?, ?, ?, ?, ?, 'draft', ?)
+                """, (
+                    cid,
+                    claim.get("claim_type", "vehicle_accident"),
+                    claim.get("description", ""),
+                    int(claim.get("claim_amount", 0)),
+                    claim.get("incident_date", "2026-09-12"),
+                    now_iso
+                ))
+            for doc in documents:
+                doc_id = doc.get("id", "doc-1")
+                cursor.execute("SELECT id FROM documents WHERE id = ? AND claim_id = ?", (doc_id, cid))
+                if not cursor.fetchone():
+                    conn.execute("""
+                        INSERT INTO documents (id, claim_id, filename, document_type, extracted_text, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (
+                        doc_id,
+                        cid,
+                        doc.get("filename", "unknown.txt"),
+                        doc.get("document_type"),
+                        doc.get("text", ""),
+                        now_iso
+                    ))
+        return run_analysis(cid, step_delay_ms=self.step_delay_ms)
+
+
