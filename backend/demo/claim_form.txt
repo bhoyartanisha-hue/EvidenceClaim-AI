@@ -1,0 +1,10 @@
+CLAIM FORM
+Claim Number: CLM-1001
+Policy Number: POL-1024
+Claimant Name: Rahul Verma
+Claim Type: Vehicle Accident
+Date of Accident: 12/09/2026
+Location of Accident: Nagpur, Maharashtra
+Vehicle: Maruti Swift (MH31AB1234)
+Claimed Amount: INR 85,000
+Description: Rear-ended at a traffic signal; rear bumper and boot damaged.

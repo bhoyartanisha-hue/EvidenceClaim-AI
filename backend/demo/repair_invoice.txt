@@ -1,0 +1,10 @@
+REPAIR INVOICE
+Invoice No: INV-5521
+Workshop: Sai Auto Works, Nagpur
+Customer: Rahul Verma
+Policy Number: POL-1024
+Vehicle: Maruti Swift (MH31AB1234)
+Invoice Date: 08/09/2026
+Repair Date: 08/09/2026
+Items: Rear bumper replacement, boot panel repair, paint
+Total Repair Amount: INR 92,000
