@@ -1,5 +1,24 @@
-# ClaimIQ
+# Pixel Perfect
 
-AI Insurance Claims Intelligence Agent (TECHNOVA '26, Track 2: AI Agent Challenges).
+Implement exactly the screenshot and nothing else
 
-For backend documentation, architecture, and API details, please see [backend/README.md](backend/README.md).
+This project was built with [Lovable](https://lovable.dev).
+
+## Build with Lovable
+
+Continue developing this project in the [Lovable editor](https://lovable.dev/projects/b9776b10-0ba6-4724-94e1-653c1e3db7cb).
+
+- **Ship faster**: describe what you want to build and Lovable handles the code.
+- **Stay in sync**: every change made in Lovable is committed straight to this repository.
+- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+
+## Development
+
+Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+
+```sh
+git clone <this-repository-url>
+cd <repository-name>
+npm i
+npm run dev
+```
